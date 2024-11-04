@@ -4,4 +4,3 @@ button.addEventListener("click", () => {
   alert("You clicked the button!");
 });
 document.body.appendChild(button);
-//brace wont build??
