@@ -27,7 +27,7 @@ leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 
 // Add player marker
-const playerMarker = leaflet.marker(PLAYER_START).addTo(map);
+const _playerMarker = leaflet.marker(PLAYER_START).addTo(map);
 
 // Status and Inventory updates
 const statusPanel = document.querySelector("#statusPanel")!;
