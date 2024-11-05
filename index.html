@@ -1,13 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  </head>
-  <body>
-    <div id="app">
-      <!-- todo -->
-    </div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geocoin Carrier</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Geocoin Carrier</h1>
+  <div id="controlPanel">
+    <button id="trackPosition">Track Position</button>
+    <button id="resetGame">Reset Game</button>
+  </div>
+  <div id="map"></div>
+  <div id="statusPanel">Points: 0</div>
+  <div id="inventory">Inventory: 0 coins</div>
+ <script type="module" src="./src/main.ts"></script>
+
+</body>
 </html>
