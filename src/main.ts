@@ -59,7 +59,6 @@ class LocationFactory {
 
 const locationFactory = new LocationFactory(); // Instantiate the factory
 
-
 function spawnCache(i: number, j: number) {
   const origin = NULL_ISLAND;
   const lat = origin.lat + i * TILE_DEGREES;
@@ -78,8 +77,6 @@ function spawnCache(i: number, j: number) {
     // Existing popup logic
   });
 }
-
-
 
 // Generate caches in the neighborhood
 for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
