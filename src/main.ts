@@ -1,4 +1,3 @@
-// Import libraries and styles
 import leaflet from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./style.css";
@@ -8,6 +7,7 @@ const TILE_DEGREES = 1e-4; // Tile size increment
 const NEIGHBORHOOD_SIZE = 8; // Size of area for cache generation
 const CACHE_SPAWN_PROBABILITY = 0.1; // Chance of spawning a cache
 const NULL_ISLAND = leaflet.latLng(0, 0); // Null Island as a geodetic datum reference point
+const PLAYER_START = leaflet.latLng(36.9895, -122.0628);
 let playerPoints = 0; // Player's score
 let playerInventory = 0; // Player's coin count
 
@@ -15,8 +15,8 @@ let playerInventory = 0; // Player's coin count
 const map = leaflet.map("map", {
   center: NULL_ISLAND, // Center map on Null Island for geodetic datum-based grid
   zoom: 19,
-  zoomControl: false,
-  scrollWheelZoom: false,
+  zoomControl: true,
+  scrollWheelZoom: true,
 });
 
 // Add OpenStreetMap tiles
@@ -29,6 +29,10 @@ leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 // Status and Inventory updates
 const statusPanel = document.querySelector("#statusPanel")!;
 const inventoryPanel = document.querySelector("#inventory")!;
+
+const playerMarker = leaflet.marker(NULL_ISLAND);
+playerMarker.bindTooltip("That's you!");
+playerMarker.addTo(map);
 
 // Function to update status display
 function updateStatus() {
@@ -53,8 +57,8 @@ class LocationFactory {
 const locationFactory = new LocationFactory(); // Instantiate the factory
 
 // Coin as a non-fungible token representation
-type Coin = { id: number }; // Unique ID per coin
-let coinIdCounter = 0; // Global counter to ensure unique coin IDs
+type Coin = { i: number; j: number; serial: number }; // Unique ID based on cache coordinates and serial
+let coinIdCounter = 0; // Global counter to ensure unique coin serials
 
 // Function to spawn caches around NULL_ISLAND
 function spawnCache(i: number, j: number) {
@@ -72,8 +76,10 @@ function spawnCache(i: number, j: number) {
   const rect = leaflet.rectangle(bounds).addTo(map);
   let cacheCoins: Coin[] = Array.from({
     length: Math.floor(Math.random() * 5) + 1,
-  }, () => ({
-    id: coinIdCounter++, // Assign unique ID to each coin
+  }, (_, serial) => ({
+    i,
+    j,
+    serial: serial, // Generate unique serial for each coin
   }));
 
   // Bind popup with cache details
@@ -102,7 +108,7 @@ function spawnCache(i: number, j: number) {
         cacheCoins.push(
           ...Array.from(
             { length: playerInventory },
-            () => ({ id: coinIdCounter++ }),
+            (_, serial) => ({ i, j, serial: coinIdCounter++ }),
           ),
         );
         playerPoints += playerInventory;
