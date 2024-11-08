@@ -71,7 +71,7 @@ function spawnCache(i: number, j: number) {
   ]);
 
   const rect = leaflet.rectangle(bounds).addTo(map);
-  let cacheCoins = Math.floor(Math.random() * 5) + 1;
+  const _cacheCoins = Math.floor(Math.random() * 5) + 1;
 
   rect.bindPopup(() => {
     // Existing popup logic
