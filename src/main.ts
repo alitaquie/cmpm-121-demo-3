@@ -7,7 +7,7 @@ const TILE_DEGREES = 1e-4; // Tile size increment
 const NEIGHBORHOOD_SIZE = 8; // Size of area for cache generation
 const CACHE_SPAWN_PROBABILITY = 0.1; // Chance of spawning a cache
 const NULL_ISLAND = leaflet.latLng(0, 0); // Null Island as a geodetic datum reference point
-const PLAYER_START = leaflet.latLng(36.9895, -122.0628);
+const _PLAYER_START = leaflet.latLng(36.9895, -122.0628);
 let playerPoints = 0; // Player's score
 let playerInventory = 0; // Player's coin count
 
@@ -108,7 +108,7 @@ function spawnCache(i: number, j: number) {
         cacheCoins.push(
           ...Array.from(
             { length: playerInventory },
-            (_, serial) => ({ i, j, serial: coinIdCounter++ }),
+            (_, _serial) => ({ i, j, serial: coinIdCounter++ }),
           ),
         );
         playerPoints += playerInventory;
