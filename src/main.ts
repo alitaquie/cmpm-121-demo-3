@@ -136,7 +136,7 @@ function spawnCache(i: number, j: number) {
       if (cache.coinCount > 0) {
         playerInventory += cache.collectCoins();
         updateStatus();
-      popupDiv.querySelector("#coinCount")!.textContent = "0";
+        popupDiv.querySelector("#coinCount")!.textContent = "0";
       }
     });
 
