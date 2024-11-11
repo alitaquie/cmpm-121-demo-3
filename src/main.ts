@@ -175,7 +175,7 @@ function movePlayer(dx: number, dy: number) {
 // Cache regeneration around the player
 function regenerateCachesAround(playerPos: leaflet.LatLng) {
   // Clear existing cache markers
-  map.eachLayer((layer) => {
+  map.eachLayer((layer: leaflet.Layer) => {
     if (layer instanceof leaflet.Rectangle) {
       map.removeLayer(layer);
     }
