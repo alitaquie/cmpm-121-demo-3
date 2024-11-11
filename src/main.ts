@@ -22,7 +22,8 @@ const map = leaflet.map("map", {
 // Add OpenStreetMap tiles
 leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
-  attribution: 'Map data &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+  attribution:
+    'Map data &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
 }).addTo(map);
 
 // Status and Inventory updates
@@ -107,7 +108,7 @@ function spawnCache(i: number, j: number) {
 
   const cacheCoins = Array.from(
     { length: Math.floor(Math.random() * 5) + 1 },
-    (_, serial) => ({ i, j, serial })
+    (_, serial) => ({ i, j, serial }),
   );
   cache.addCoins(cacheCoins);
 
@@ -143,13 +144,14 @@ function spawnCache(i: number, j: number) {
       if (playerInventory > 0) {
         const depositCoins = Array.from(
           { length: playerInventory },
-          (_, _serial) => ({ i, j, serial: coinIdCounter++ })
+          (_, _serial) => ({ i, j, serial: coinIdCounter++ }),
         );
         cache.addCoins(depositCoins);
         playerPoints += playerInventory;
         playerInventory = 0;
         updateStatus();
-        popupDiv.querySelector("#coinCount")!.textContent = `${cache.coinCount}`;
+        popupDiv.querySelector("#coinCount")!.textContent =
+          `${cache.coinCount}`;
       }
     });
 
@@ -184,10 +186,18 @@ function regenerateCachesAround(playerPos: leaflet.LatLng) {
   const playerJ = Math.floor((playerPos.lng - NULL_ISLAND.lng) / TILE_DEGREES);
 
   // Regenerate caches within the neighborhood
-  for (let i = playerI - NEIGHBORHOOD_SIZE; i <= playerI + NEIGHBORHOOD_SIZE; i++) {
-    for (let j = playerJ - NEIGHBORHOOD_SIZE; j <= playerJ + NEIGHBORHOOD_SIZE; j++) {
+  for (
+    let i = playerI - NEIGHBORHOOD_SIZE;
+    i <= playerI + NEIGHBORHOOD_SIZE;
+    i++
+  ) {
+    for (
+      let j = playerJ - NEIGHBORHOOD_SIZE;
+      j <= playerJ + NEIGHBORHOOD_SIZE;
+      j++
+    ) {
       const key = `${i},${j}`;
-      
+
       // If cache exists at this location
       if (cacheMap.has(key)) {
         const cache = cacheMap.get(key)!;
@@ -195,8 +205,7 @@ function regenerateCachesAround(playerPos: leaflet.LatLng) {
           cache.restoreState(cache.memento);
         }
         spawnCache(i, j);
-      } 
-      // If no cache exists and we meet spawn probability
+      } // If no cache exists and we meet spawn probability
       else if (Math.random() < CACHE_SPAWN_PROBABILITY) {
         spawnCache(i, j);
       }
@@ -207,10 +216,12 @@ function regenerateCachesAround(playerPos: leaflet.LatLng) {
   cacheMap.forEach((cache, key) => {
     const cacheLatLng = locationFactory.getLocation(
       NULL_ISLAND.lat + cache.i * TILE_DEGREES,
-      NULL_ISLAND.lng + cache.j * TILE_DEGREES
+      NULL_ISLAND.lng + cache.j * TILE_DEGREES,
     );
 
-    if (playerPos.distanceTo(cacheLatLng) > TILE_DEGREES * NEIGHBORHOOD_SIZE * 2) {
+    if (
+      playerPos.distanceTo(cacheLatLng) > TILE_DEGREES * NEIGHBORHOOD_SIZE * 2
+    ) {
       cache.saveState();
       cacheMap.delete(key);
     }
@@ -218,10 +229,22 @@ function regenerateCachesAround(playerPos: leaflet.LatLng) {
 }
 
 // Add event listeners for movement buttons
-document.querySelector("#moveUp")!.addEventListener("click", () => movePlayer(0, TILE_DEGREES));
-document.querySelector("#moveDown")!.addEventListener("click", () => movePlayer(0, -TILE_DEGREES));
-document.querySelector("#moveLeft")!.addEventListener("click", () => movePlayer(-TILE_DEGREES, 0));
-document.querySelector("#moveRight")!.addEventListener("click", () => movePlayer(TILE_DEGREES, 0));
+document.querySelector("#moveUp")!.addEventListener(
+  "click",
+  () => movePlayer(0, TILE_DEGREES),
+);
+document.querySelector("#moveDown")!.addEventListener(
+  "click",
+  () => movePlayer(0, -TILE_DEGREES),
+);
+document.querySelector("#moveLeft")!.addEventListener(
+  "click",
+  () => movePlayer(-TILE_DEGREES, 0),
+);
+document.querySelector("#moveRight")!.addEventListener(
+  "click",
+  () => movePlayer(TILE_DEGREES, 0),
+);
 
 // Initial cache generation
 for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
@@ -238,4 +261,3 @@ document.querySelector("#resetGame")!.addEventListener("click", () => {
   playerInventory = 0; // Reset inventory
   updateStatus(); // Update the display
 });
-
