@@ -67,7 +67,7 @@ class CacheMemento {
 
 class Cache {
   private coins: Coin[] = [];
-  private memento?: CacheMemento;
+  public memento?: CacheMemento;
 
   constructor(public i: number, public j: number) {}
 
@@ -136,7 +136,7 @@ function spawnCache(i: number, j: number) {
       if (cache.coinCount > 0) {
         playerInventory += cache.collectCoins();
         updateStatus();
-        popupDiv.querySelector("#coinCount")!.textContent = "0";
+      popupDiv.querySelector("#coinCount")!.textContent = "0";
       }
     });
 
