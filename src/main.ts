@@ -132,6 +132,22 @@ for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
   }
 }
 
+function movePlayer(dx: number, dy: number) {
+  const newLat = playerMarker.getLatLng().lat + dy;
+  const newLng = playerMarker.getLatLng().lng + dx;
+  const newPos = locationFactory.getLocation(newLat, newLng);
+  playerMarker.setLatLng(newPos);
+
+  // Regenerate caches in the vicinity
+  map.panTo(newPos); // Center map on the new position
+}
+
+
+document.querySelector("#moveUp")!.addEventListener("click", () => movePlayer(0, TILE_DEGREES));
+document.querySelector("#moveDown")!.addEventListener("click", () => movePlayer(0, -TILE_DEGREES));
+document.querySelector("#moveLeft")!.addEventListener("click", () => movePlayer(-TILE_DEGREES, 0));
+document.querySelector("#moveRight")!.addEventListener("click", () => movePlayer(TILE_DEGREES, 0));
+
 // Event listener for resetting the game
 document.querySelector("#resetGame")!.addEventListener("click", () => {
   playerPoints = 0; // Reset player points
