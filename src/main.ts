@@ -243,7 +243,9 @@ class AutomaticPlayerMovement implements PlayerMovementStrategy {
 }
 
 let playerMovementStrategy: PlayerMovementStrategy = new ManualPlayerMovement();
-const playerPolyline = leaflet.polyline(playerMovementHistory, { color: "blue" })
+const playerPolyline = leaflet.polyline(playerMovementHistory, {
+  color: "blue",
+})
   .addTo(map);
 
 // Function to update the polyline path as player moves
