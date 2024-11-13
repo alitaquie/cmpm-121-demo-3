@@ -195,7 +195,10 @@ class AutomaticPlayerMovement implements PlayerMovementStrategy {
 
   async getCurrentPosition(): Promise<leaflet.LatLng> {
     const pos = await this.getCurrentGeolocation();
-    return locationFactory.getLocation(pos.coords.latitude, pos.coords.longitude);
+    return locationFactory.getLocation(
+      pos.coords.latitude,
+      pos.coords.longitude,
+    );
   }
 
   startPositionTracking(): void {
@@ -220,11 +223,10 @@ class AutomaticPlayerMovement implements PlayerMovementStrategy {
     return new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(
         (position) => resolve(position),
-        (error) => reject(error)
+        (error) => reject(error),
       );
     });
   }
-
 
   private onPositionUpdate(position: GeolocationPosition): void {
     const newPos = locationFactory.getLocation(
@@ -354,19 +356,30 @@ document.addEventListener("DOMContentLoaded", () => {
     "click",
     togglePositionTracking,
   );
+  interface GameState {
+    playerPoints: number;
+    playerInventory: number; // specify proper type
+    playerMovementHistory: leaflet.LatLng[]; // specify proper type
+    updateStatus: () => void;
+  }
+  const gameState: GameState = {
+    playerPoints,
+    playerInventory,
+    playerMovementHistory,
+    updateStatus,
+  };
 
-  // Persist game state to local storage
-  function loadGameState() {
+  function loadGameState(context: GameState): void {
     const savedState = localStorage.getItem("gameState");
     if (savedState) {
       const { playerPoints, playerInventory, playerMovementHistory } = JSON
         .parse(savedState);
-      this.playerPoints = playerPoints;
-      this.playerInventory = playerInventory;
-      this.playerMovementHistory = playerMovementHistory.map((pos) =>
-        locationFactory.getLocation(pos.lat, pos.lng)
-      );
-      updateStatus();
+      context.playerPoints = playerPoints;
+      context.playerInventory = playerInventory;
+      context.playerMovementHistory = playerMovementHistory.map((
+        pos: { lat: number; lng: number },
+      ) => locationFactory.getLocation(pos.lat, pos.lng));
+      context.updateStatus();
     }
   }
 
@@ -406,7 +419,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Load the game state from local storage
-  loadGameState();
+  loadGameState(gameState);
 
   // Render the player's movement history as a polyline
   const movementHistoryLayer = leaflet.polyline(playerMovementHistory, {
