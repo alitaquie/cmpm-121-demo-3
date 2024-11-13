@@ -243,7 +243,7 @@ class AutomaticPlayerMovement implements PlayerMovementStrategy {
 }
 
 let playerMovementStrategy: PlayerMovementStrategy = new ManualPlayerMovement();
-let playerPolyline = leaflet.polyline(playerMovementHistory, { color: "blue" })
+const playerPolyline = leaflet.polyline(playerMovementHistory, { color: "blue" })
   .addTo(map);
 
 // Function to update the polyline path as player moves
@@ -383,7 +383,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function saveGameState() {
+  function __saveGameState() {
     localStorage.setItem(
       "gameState",
       JSON.stringify({
@@ -422,7 +422,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadGameState(gameState);
 
   // Render the player's movement history as a polyline
-  const movementHistoryLayer = leaflet.polyline(playerMovementHistory, {
+  const __movementHistoryLayer = leaflet.polyline(playerMovementHistory, {
     color: "red",
     weight: 3,
   }).addTo(map);
