@@ -191,13 +191,11 @@ class AutomaticPlayerMovement implements PlayerMovementStrategy {
   private watchId: number | null = null;
 
   getCurrentPosition(): leaflet.LatLng {
-    // Get the current position from the browser's geolocation API
     const pos = this.getCurrentGeolocation();
     return locationFactory.getLocation(pos.latitude, pos.longitude);
   }
 
   startPositionTracking(): void {
-    // Start tracking the player's position using the browser's geolocation API
     this.watchId = navigator.geolocation.watchPosition(
       (position) => {
         this.onPositionUpdate(position);
@@ -209,7 +207,6 @@ class AutomaticPlayerMovement implements PlayerMovementStrategy {
   }
 
   stopPositionTracking(): void {
-    // Stop tracking the player's position
     if (this.watchId !== null) {
       navigator.geolocation.clearWatch(this.watchId);
       this.watchId = null;
@@ -217,12 +214,10 @@ class AutomaticPlayerMovement implements PlayerMovementStrategy {
   }
 
   private getCurrentGeolocation(): GeolocationPosition {
-    // Get the current position from the browser's geolocation API
     return navigator.geolocation.getCurrentPosition((position) => position);
   }
 
   private onPositionUpdate(position: GeolocationPosition): void {
-    // Update the player's position on the map
     const newPos = locationFactory.getLocation(
       position.coords.latitude,
       position.coords.longitude
@@ -230,14 +225,19 @@ class AutomaticPlayerMovement implements PlayerMovementStrategy {
     playerMarker.setLatLng(newPos);
     map.panTo(newPos);
 
-    // Store the player's movement history
     playerMovementHistory.push(newPos);
     updateStatus();
+    updatePlayerPath();  // Update polyline path
   }
 }
 
 let playerMovementStrategy: PlayerMovementStrategy = new ManualPlayerMovement();
+let playerPolyline = leaflet.polyline(playerMovementHistory, { color: 'blue' }).addTo(map);
 
+// Function to update the polyline path as player moves
+function updatePlayerPath() {
+  playerPolyline.setLatLngs(playerMovementHistory);
+}
 
 // Functions to handle player movement
 function movePlayer(dx: number, dy: number) {
@@ -246,15 +246,16 @@ function movePlayer(dx: number, dy: number) {
   const newPos = locationFactory.getLocation(newLat, newLng);
   playerMarker.setLatLng(newPos);
 
-  // Regenerate caches in the vicinity
   regenerateCachesAround(newPos);
-  map.panTo(newPos); // Center map on the new position
+  map.panTo(newPos);
 
   // Store the player's movement history
   playerMovementHistory.push(newPos);
   updateStatus();
-}
 
+  // Update the polyline path
+  updatePlayerPath();
+}
 function togglePositionTracking() {
   if (playerMovementStrategy instanceof ManualPlayerMovement) {
     playerMovementStrategy = new AutomaticPlayerMovement();
@@ -348,12 +349,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // Event listener for resetting the game
   document.querySelector("#resetGame")!.addEventListener("click", () => {
     if (confirm("Are you sure you want to reset the game?")) {
-      playerPoints = 0; // Reset player points
-      playerInventory = 0; // Reset inventory
-      playerMovementHistory = []; // Reset movement history
-      cacheMap.forEach((cache) => cache.saveState()); // Save cache states
+      playerPoints = 0;
+      playerInventory = 0;
+      playerMovementHistory = [];
+      cacheMap.forEach((cache) => cache.saveState());
       updateStatus();
-      localStorage.removeItem("gameState"); // Remove saved game state
+      localStorage.removeItem("gameState");
+  
+      // Clear polyline path
+      playerPolyline.setLatLngs([]);
     }
   });
 
