@@ -22,7 +22,8 @@ const map = leaflet.map("map", {
 // Add OpenStreetMap tiles
 leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
-  attribution: 'Map data &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+  attribution:
+    'Map data &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
 }).addTo(map);
 
 // Status and Inventory updates
@@ -39,7 +40,8 @@ function updateStatus() {
   if (statusPanel && inventoryPanel && movementHistoryPanel) {
     statusPanel.innerHTML = `Points: ${playerPoints}`;
     inventoryPanel.innerHTML = `Inventory: ${playerInventory} coins`;
-    movementHistoryPanel.innerHTML = `Movement History: ${playerMovementHistory.length} points`;
+    movementHistoryPanel.innerHTML =
+      `Movement History: ${playerMovementHistory.length} points`;
   }
 }
 
@@ -70,7 +72,7 @@ class CacheMemento {
 
 class Cache {
   private coins: Coin[] = [];
-  private memento?: CacheMemento;
+  public memento?: CacheMemento;
 
   constructor(public i: number, public j: number) {}
 
@@ -111,7 +113,7 @@ function spawnCache(i: number, j: number) {
 
   const cacheCoins = Array.from(
     { length: Math.floor(Math.random() * 5) + 1 },
-    (_, serial) => ({ i, j, serial })
+    (_, serial) => ({ i, j, serial }),
   );
   cache.addCoins(cacheCoins);
 
@@ -148,13 +150,14 @@ function spawnCache(i: number, j: number) {
       if (playerInventory > 0) {
         const depositCoins = Array.from(
           { length: playerInventory },
-          (_, _serial) => ({ i, j, serial: coinIdCounter++ })
+          (_, _serial) => ({ i, j, serial: coinIdCounter++ }),
         );
         cache.addCoins(depositCoins);
         playerPoints += playerInventory;
         playerInventory = 0;
         updateStatus();
-        popupDiv.querySelector("#coinCount")!.textContent = `${cache.coinCount}`;
+        popupDiv.querySelector("#coinCount")!.textContent =
+          `${cache.coinCount}`;
       }
     });
 
@@ -190,9 +193,9 @@ class ManualPlayerMovement implements PlayerMovementStrategy {
 class AutomaticPlayerMovement implements PlayerMovementStrategy {
   private watchId: number | null = null;
 
-  getCurrentPosition(): leaflet.LatLng {
-    const pos = this.getCurrentGeolocation();
-    return locationFactory.getLocation(pos.latitude, pos.longitude);
+  async getCurrentPosition(): Promise<leaflet.LatLng> {
+    const pos = await this.getCurrentGeolocation();
+    return locationFactory.getLocation(pos.coords.latitude, pos.coords.longitude);
   }
 
   startPositionTracking(): void {
@@ -202,7 +205,7 @@ class AutomaticPlayerMovement implements PlayerMovementStrategy {
       },
       (error) => {
         console.error("Error getting geolocation:", error);
-      }
+      },
     );
   }
 
@@ -213,26 +216,33 @@ class AutomaticPlayerMovement implements PlayerMovementStrategy {
     }
   }
 
-  private getCurrentGeolocation(): GeolocationPosition {
-    return navigator.geolocation.getCurrentPosition((position) => position);
+  private getCurrentGeolocation(): Promise<GeolocationPosition> {
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve(position),
+        (error) => reject(error)
+      );
+    });
   }
+
 
   private onPositionUpdate(position: GeolocationPosition): void {
     const newPos = locationFactory.getLocation(
       position.coords.latitude,
-      position.coords.longitude
+      position.coords.longitude,
     );
     playerMarker.setLatLng(newPos);
     map.panTo(newPos);
 
     playerMovementHistory.push(newPos);
     updateStatus();
-    updatePlayerPath();  // Update polyline path
+    updatePlayerPath(); // Update polyline path
   }
 }
 
 let playerMovementStrategy: PlayerMovementStrategy = new ManualPlayerMovement();
-let playerPolyline = leaflet.polyline(playerMovementHistory, { color: 'blue' }).addTo(map);
+let playerPolyline = leaflet.polyline(playerMovementHistory, { color: "blue" })
+  .addTo(map);
 
 // Function to update the polyline path as player moves
 function updatePlayerPath() {
@@ -280,10 +290,18 @@ function regenerateCachesAround(playerPos: leaflet.LatLng) {
   const playerJ = Math.floor((playerPos.lng - NULL_ISLAND.lng) / TILE_DEGREES);
 
   // Regenerate caches within the neighborhood
-  for (let i = playerI - NEIGHBORHOOD_SIZE; i <= playerI + NEIGHBORHOOD_SIZE; i++) {
-    for (let j = playerJ - NEIGHBORHOOD_SIZE; j <= playerJ + NEIGHBORHOOD_SIZE; j++) {
+  for (
+    let i = playerI - NEIGHBORHOOD_SIZE;
+    i <= playerI + NEIGHBORHOOD_SIZE;
+    i++
+  ) {
+    for (
+      let j = playerJ - NEIGHBORHOOD_SIZE;
+      j <= playerJ + NEIGHBORHOOD_SIZE;
+      j++
+    ) {
       const key = `${i},${j}`;
-      
+
       // If cache exists at this location
       if (cacheMap.has(key)) {
         const cache = cacheMap.get(key)!;
@@ -291,8 +309,7 @@ function regenerateCachesAround(playerPos: leaflet.LatLng) {
           cache.restoreState(cache.memento);
         }
         spawnCache(i, j);
-      } 
-      // If no cache exists and we meet spawn probability
+      } // If no cache exists and we meet spawn probability
       else if (Math.random() < CACHE_SPAWN_PROBABILITY) {
         spawnCache(i, j);
       }
@@ -303,29 +320,47 @@ function regenerateCachesAround(playerPos: leaflet.LatLng) {
   cacheMap.forEach((cache, key) => {
     const cacheLatLng = locationFactory.getLocation(
       NULL_ISLAND.lat + cache.i * TILE_DEGREES,
-      NULL_ISLAND.lng + cache.j * TILE_DEGREES
+      NULL_ISLAND.lng + cache.j * TILE_DEGREES,
     );
 
-    if (playerPos.distanceTo(cacheLatLng) > TILE_DEGREES * NEIGHBORHOOD_SIZE * 2) {
+    if (
+      playerPos.distanceTo(cacheLatLng) > TILE_DEGREES * NEIGHBORHOOD_SIZE * 2
+    ) {
       cache.saveState();
       cacheMap.delete(key);
     }
   });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   // Add event listeners for movement buttons
-  document.querySelector("#moveUp")!.addEventListener("click", () => movePlayer(0, TILE_DEGREES));
-  document.querySelector("#moveDown")!.addEventListener("click", () => movePlayer(0, -TILE_DEGREES));
-  document.querySelector("#moveLeft")!.addEventListener("click", () => movePlayer(-TILE_DEGREES, 0));
-  document.querySelector("#moveRight")!.addEventListener("click", () => movePlayer(TILE_DEGREES, 0));
-  document.querySelector("#togglePositionTracking")!.addEventListener("click", togglePositionTracking);
+  document.querySelector("#moveUp")!.addEventListener(
+    "click",
+    () => movePlayer(0, TILE_DEGREES),
+  );
+  document.querySelector("#moveDown")!.addEventListener(
+    "click",
+    () => movePlayer(0, -TILE_DEGREES),
+  );
+  document.querySelector("#moveLeft")!.addEventListener(
+    "click",
+    () => movePlayer(-TILE_DEGREES, 0),
+  );
+  document.querySelector("#moveRight")!.addEventListener(
+    "click",
+    () => movePlayer(TILE_DEGREES, 0),
+  );
+  document.querySelector("#togglePositionTracking")!.addEventListener(
+    "click",
+    togglePositionTracking,
+  );
 
   // Persist game state to local storage
   function loadGameState() {
     const savedState = localStorage.getItem("gameState");
     if (savedState) {
-      const { playerPoints, playerInventory, playerMovementHistory } = JSON.parse(savedState);
+      const { playerPoints, playerInventory, playerMovementHistory } = JSON
+        .parse(savedState);
       this.playerPoints = playerPoints;
       this.playerInventory = playerInventory;
       this.playerMovementHistory = playerMovementHistory.map((pos) =>
@@ -342,7 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
         playerPoints,
         playerInventory,
         playerMovementHistory: playerMovementHistory.map((pos) => pos.toJSON()),
-      })
+      }),
     );
   }
 
@@ -355,7 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
       cacheMap.forEach((cache) => cache.saveState());
       updateStatus();
       localStorage.removeItem("gameState");
-  
+
       // Clear polyline path
       playerPolyline.setLatLngs([]);
     }
