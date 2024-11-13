@@ -7,9 +7,9 @@ const TILE_DEGREES = 1e-4; // Tile size increment
 const NEIGHBORHOOD_SIZE = 8; // Size of area for cache generation
 const CACHE_SPAWN_PROBABILITY = 0.1; // Chance of spawning a cache
 const NULL_ISLAND = leaflet.latLng(0, 0); // Null Island as a geodetic datum reference point
-const _PLAYER_START = leaflet.latLng(36.9895, -122.0628);
 let playerPoints = 0; // Player's score
 let playerInventory = 0; // Player's coin count
+let playerMovementHistory: leaflet.LatLng[] = []; // Player's movement history
 
 // Initialize map
 const map = leaflet.map("map", {
@@ -22,13 +22,13 @@ const map = leaflet.map("map", {
 // Add OpenStreetMap tiles
 leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
-  attribution:
-    'Map data &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+  attribution: 'Map data &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
 }).addTo(map);
 
 // Status and Inventory updates
-const statusPanel = document.querySelector("#statusPanel")!;
-const inventoryPanel = document.querySelector("#inventory")!;
+const statusPanel = document.querySelector("#statusPanel");
+const inventoryPanel = document.querySelector("#inventory");
+const movementHistoryPanel = document.querySelector("#movementHistory");
 
 const playerMarker = leaflet.marker(NULL_ISLAND);
 playerMarker.bindTooltip("That's you!");
@@ -36,8 +36,11 @@ playerMarker.addTo(map);
 
 // Function to update status display
 function updateStatus() {
-  statusPanel.innerHTML = `Points: ${playerPoints}`;
-  inventoryPanel.innerHTML = `Inventory: ${playerInventory} coins`;
+  if (statusPanel && inventoryPanel && movementHistoryPanel) {
+    statusPanel.innerHTML = `Points: ${playerPoints}`;
+    inventoryPanel.innerHTML = `Inventory: ${playerInventory} coins`;
+    movementHistoryPanel.innerHTML = `Movement History: ${playerMovementHistory.length} points`;
+  }
 }
 
 // Location Factory using Flyweight Pattern
@@ -67,7 +70,7 @@ class CacheMemento {
 
 class Cache {
   private coins: Coin[] = [];
-  public memento?: CacheMemento;
+  private memento?: CacheMemento;
 
   constructor(public i: number, public j: number) {}
 
@@ -108,7 +111,7 @@ function spawnCache(i: number, j: number) {
 
   const cacheCoins = Array.from(
     { length: Math.floor(Math.random() * 5) + 1 },
-    (_, serial) => ({ i, j, serial }),
+    (_, serial) => ({ i, j, serial })
   );
   cache.addCoins(cacheCoins);
 
@@ -130,6 +133,7 @@ function spawnCache(i: number, j: number) {
       <div>Coins available: <span id="coinCount">${cache.coinCount}</span></div>
       <button id="collectCoins">Collect</button>
       <button id="depositCoins">Deposit</button>
+      <button id="centerOnCache">Center on Cache</button>
     `;
 
     popupDiv.querySelector("#collectCoins")!.addEventListener("click", () => {
@@ -144,34 +148,123 @@ function spawnCache(i: number, j: number) {
       if (playerInventory > 0) {
         const depositCoins = Array.from(
           { length: playerInventory },
-          (_, _serial) => ({ i, j, serial: coinIdCounter++ }),
+          (_, _serial) => ({ i, j, serial: coinIdCounter++ })
         );
         cache.addCoins(depositCoins);
         playerPoints += playerInventory;
         playerInventory = 0;
         updateStatus();
-        popupDiv.querySelector("#coinCount")!.textContent =
-          `${cache.coinCount}`;
+        popupDiv.querySelector("#coinCount")!.textContent = `${cache.coinCount}`;
       }
+    });
+
+    popupDiv.querySelector("#centerOnCache")!.addEventListener("click", () => {
+      map.panTo(locationFactory.getLocation(lat, lng));
     });
 
     return popupDiv;
   });
 }
 
-// Moving the player and regenerating caches
+// Facade pattern to decouple player movement from specific mechanisms
+interface PlayerMovementStrategy {
+  getCurrentPosition(): leaflet.LatLng;
+  startPositionTracking(): void;
+  stopPositionTracking(): void;
+}
+
+class ManualPlayerMovement implements PlayerMovementStrategy {
+  getCurrentPosition(): leaflet.LatLng {
+    return playerMarker.getLatLng();
+  }
+
+  startPositionTracking(): void {
+    // No-op for manual movement
+  }
+
+  stopPositionTracking(): void {
+    // No-op for manual movement
+  }
+}
+
+class AutomaticPlayerMovement implements PlayerMovementStrategy {
+  private watchId: number | null = null;
+
+  getCurrentPosition(): leaflet.LatLng {
+    // Get the current position from the browser's geolocation API
+    const pos = this.getCurrentGeolocation();
+    return locationFactory.getLocation(pos.latitude, pos.longitude);
+  }
+
+  startPositionTracking(): void {
+    // Start tracking the player's position using the browser's geolocation API
+    this.watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        this.onPositionUpdate(position);
+      },
+      (error) => {
+        console.error("Error getting geolocation:", error);
+      }
+    );
+  }
+
+  stopPositionTracking(): void {
+    // Stop tracking the player's position
+    if (this.watchId !== null) {
+      navigator.geolocation.clearWatch(this.watchId);
+      this.watchId = null;
+    }
+  }
+
+  private getCurrentGeolocation(): GeolocationPosition {
+    // Get the current position from the browser's geolocation API
+    return navigator.geolocation.getCurrentPosition((position) => position);
+  }
+
+  private onPositionUpdate(position: GeolocationPosition): void {
+    // Update the player's position on the map
+    const newPos = locationFactory.getLocation(
+      position.coords.latitude,
+      position.coords.longitude
+    );
+    playerMarker.setLatLng(newPos);
+    map.panTo(newPos);
+
+    // Store the player's movement history
+    playerMovementHistory.push(newPos);
+    updateStatus();
+  }
+}
+
+let playerMovementStrategy: PlayerMovementStrategy = new ManualPlayerMovement();
+
+
+// Functions to handle player movement
 function movePlayer(dx: number, dy: number) {
-  const newLat = playerMarker.getLatLng().lat + dy;
-  const newLng = playerMarker.getLatLng().lng + dx;
+  const newLat = playerMovementStrategy.getCurrentPosition().lat + dy;
+  const newLng = playerMovementStrategy.getCurrentPosition().lng + dx;
   const newPos = locationFactory.getLocation(newLat, newLng);
   playerMarker.setLatLng(newPos);
 
   // Regenerate caches in the vicinity
   regenerateCachesAround(newPos);
   map.panTo(newPos); // Center map on the new position
+
+  // Store the player's movement history
+  playerMovementHistory.push(newPos);
+  updateStatus();
 }
 
-// Cache regeneration around the player
+function togglePositionTracking() {
+  if (playerMovementStrategy instanceof ManualPlayerMovement) {
+    playerMovementStrategy = new AutomaticPlayerMovement();
+    playerMovementStrategy.startPositionTracking();
+  } else {
+    playerMovementStrategy.stopPositionTracking();
+    playerMovementStrategy = new ManualPlayerMovement();
+  }
+}
+
 // Cache regeneration around the player
 function regenerateCachesAround(playerPos: leaflet.LatLng) {
   // Clear existing cache markers
@@ -186,18 +279,10 @@ function regenerateCachesAround(playerPos: leaflet.LatLng) {
   const playerJ = Math.floor((playerPos.lng - NULL_ISLAND.lng) / TILE_DEGREES);
 
   // Regenerate caches within the neighborhood
-  for (
-    let i = playerI - NEIGHBORHOOD_SIZE;
-    i <= playerI + NEIGHBORHOOD_SIZE;
-    i++
-  ) {
-    for (
-      let j = playerJ - NEIGHBORHOOD_SIZE;
-      j <= playerJ + NEIGHBORHOOD_SIZE;
-      j++
-    ) {
+  for (let i = playerI - NEIGHBORHOOD_SIZE; i <= playerI + NEIGHBORHOOD_SIZE; i++) {
+    for (let j = playerJ - NEIGHBORHOOD_SIZE; j <= playerJ + NEIGHBORHOOD_SIZE; j++) {
       const key = `${i},${j}`;
-
+      
       // If cache exists at this location
       if (cacheMap.has(key)) {
         const cache = cacheMap.get(key)!;
@@ -205,7 +290,8 @@ function regenerateCachesAround(playerPos: leaflet.LatLng) {
           cache.restoreState(cache.memento);
         }
         spawnCache(i, j);
-      } // If no cache exists and we meet spawn probability
+      } 
+      // If no cache exists and we meet spawn probability
       else if (Math.random() < CACHE_SPAWN_PROBABILITY) {
         spawnCache(i, j);
       }
@@ -216,48 +302,76 @@ function regenerateCachesAround(playerPos: leaflet.LatLng) {
   cacheMap.forEach((cache, key) => {
     const cacheLatLng = locationFactory.getLocation(
       NULL_ISLAND.lat + cache.i * TILE_DEGREES,
-      NULL_ISLAND.lng + cache.j * TILE_DEGREES,
+      NULL_ISLAND.lng + cache.j * TILE_DEGREES
     );
 
-    if (
-      playerPos.distanceTo(cacheLatLng) > TILE_DEGREES * NEIGHBORHOOD_SIZE * 2
-    ) {
+    if (playerPos.distanceTo(cacheLatLng) > TILE_DEGREES * NEIGHBORHOOD_SIZE * 2) {
       cache.saveState();
       cacheMap.delete(key);
     }
   });
 }
 
-// Add event listeners for movement buttons
-document.querySelector("#moveUp")!.addEventListener(
-  "click",
-  () => movePlayer(0, TILE_DEGREES),
-);
-document.querySelector("#moveDown")!.addEventListener(
-  "click",
-  () => movePlayer(0, -TILE_DEGREES),
-);
-document.querySelector("#moveLeft")!.addEventListener(
-  "click",
-  () => movePlayer(-TILE_DEGREES, 0),
-);
-document.querySelector("#moveRight")!.addEventListener(
-  "click",
-  () => movePlayer(TILE_DEGREES, 0),
-);
+document.addEventListener('DOMContentLoaded', () => {
+  // Add event listeners for movement buttons
+  document.querySelector("#moveUp")!.addEventListener("click", () => movePlayer(0, TILE_DEGREES));
+  document.querySelector("#moveDown")!.addEventListener("click", () => movePlayer(0, -TILE_DEGREES));
+  document.querySelector("#moveLeft")!.addEventListener("click", () => movePlayer(-TILE_DEGREES, 0));
+  document.querySelector("#moveRight")!.addEventListener("click", () => movePlayer(TILE_DEGREES, 0));
+  document.querySelector("#togglePositionTracking")!.addEventListener("click", togglePositionTracking);
 
-// Initial cache generation
-for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
-  for (let j = -NEIGHBORHOOD_SIZE; j <= NEIGHBORHOOD_SIZE; j++) {
-    if (Math.random() < CACHE_SPAWN_PROBABILITY) {
-      spawnCache(i, j); // Spawn a cache at (i, j) if probability condition is met
+  // Persist game state to local storage
+  function loadGameState() {
+    const savedState = localStorage.getItem("gameState");
+    if (savedState) {
+      const { playerPoints, playerInventory, playerMovementHistory } = JSON.parse(savedState);
+      this.playerPoints = playerPoints;
+      this.playerInventory = playerInventory;
+      this.playerMovementHistory = playerMovementHistory.map((pos) =>
+        locationFactory.getLocation(pos.lat, pos.lng)
+      );
+      updateStatus();
     }
   }
-}
 
-// Event listener for resetting the game
-document.querySelector("#resetGame")!.addEventListener("click", () => {
-  playerPoints = 0; // Reset player points
-  playerInventory = 0; // Reset inventory
-  updateStatus(); // Update the display
+  function saveGameState() {
+    localStorage.setItem(
+      "gameState",
+      JSON.stringify({
+        playerPoints,
+        playerInventory,
+        playerMovementHistory: playerMovementHistory.map((pos) => pos.toJSON()),
+      })
+    );
+  }
+
+  // Event listener for resetting the game
+  document.querySelector("#resetGame")!.addEventListener("click", () => {
+    if (confirm("Are you sure you want to reset the game?")) {
+      playerPoints = 0; // Reset player points
+      playerInventory = 0; // Reset inventory
+      playerMovementHistory = []; // Reset movement history
+      cacheMap.forEach((cache) => cache.saveState()); // Save cache states
+      updateStatus();
+      localStorage.removeItem("gameState"); // Remove saved game state
+    }
+  });
+
+  // Initial cache generation
+  for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
+    for (let j = -NEIGHBORHOOD_SIZE; j <= NEIGHBORHOOD_SIZE; j++) {
+      if (Math.random() < CACHE_SPAWN_PROBABILITY) {
+        spawnCache(i, j); // Spawn a cache at (i, j) if probability condition is met
+      }
+    }
+  }
+
+  // Load the game state from local storage
+  loadGameState();
+
+  // Render the player's movement history as a polyline
+  const movementHistoryLayer = leaflet.polyline(playerMovementHistory, {
+    color: "red",
+    weight: 3,
+  }).addTo(map);
 });
