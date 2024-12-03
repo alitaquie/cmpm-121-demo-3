@@ -19,7 +19,8 @@ const map = leaflet.map("map", {
 // Add OpenStreetMap tiles
 leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
-  attribution: 'Map data &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+  attribution:
+    'Map data &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
 }).addTo(map);
 
 // Status and Inventory HTML elements
@@ -57,7 +58,7 @@ class CacheMemento {
 
 class Cache {
   private coins: Coin[] = [];
-  
+
   constructor(public i: number, public j: number) {}
 
   addCoins(coins: Coin[]) {
@@ -108,7 +109,7 @@ class CacheManager {
     const cache = new Cache(i, j);
     const cacheCoins = Array.from(
       { length: Math.floor(Math.random() * 5) + 1 },
-      (_, serial) => ({ i, j, serial })
+      (_, serial) => ({ i, j, serial }),
     );
     cache.addCoins(cacheCoins);
 
@@ -128,12 +129,12 @@ class CacheManager {
     this.cacheMap.forEach((cache, key) => {
       const cacheLatLng = locationFactory.getLocation(
         NULL_ISLAND.lat + cache.i * TILE_DEGREES,
-        NULL_ISLAND.lng + cache.j * TILE_DEGREES
+        NULL_ISLAND.lng + cache.j * TILE_DEGREES,
       );
 
       if (
         playerPos.distanceTo(cacheLatLng) >
-        TILE_DEGREES * NEIGHBORHOOD_SIZE * 2
+          TILE_DEGREES * NEIGHBORHOOD_SIZE * 2
       ) {
         const memento = this.mementoManager.saveState(cache);
         this.mementoManager.restoreState(cache, memento); // Just for example purposes
@@ -165,7 +166,12 @@ class PopupHandler {
     return popupDiv;
   }
 
-  private attachPopupListeners(popupDiv: HTMLDivElement, i: number, j: number, cache: Cache): void {
+  private attachPopupListeners(
+    popupDiv: HTMLDivElement,
+    i: number,
+    j: number,
+    cache: Cache,
+  ): void {
     popupDiv.querySelector("#collectCoins")!.addEventListener("click", () => {
       if (cache.coinCount > 0) {
         playerState.addToInventory(this.cacheManager.collectCache(`${i},${j}`));
@@ -178,20 +184,21 @@ class PopupHandler {
       if (playerState.getInventory() > 0) {
         const depositCoins = Array.from(
           { length: playerState.getInventory() },
-          (_, _serial) => ({ i, j, serial: coinIdCounter++ })
+          (_, _serial) => ({ i, j, serial: coinIdCounter++ }),
         );
         cache.addCoins(depositCoins);
         playerState.addPoints(playerState.getInventory());
         playerState.clearInventory();
         updateStatus();
-        popupDiv.querySelector("#coinCount")!.textContent = `${cache.coinCount}`;
+        popupDiv.querySelector("#coinCount")!.textContent =
+          `${cache.coinCount}`;
       }
     });
 
     popupDiv.querySelector("#centerOnCache")!.addEventListener("click", () => {
       this.map.panTo(locationFactory.getLocation(
         NULL_ISLAND.lat + i * TILE_DEGREES,
-        NULL_ISLAND.lng + j * TILE_DEGREES
+        NULL_ISLAND.lng + j * TILE_DEGREES,
       ));
     });
   }
@@ -252,7 +259,8 @@ function updateInventory() {
 
 function updateMovementHistory() {
   if (movementHistoryPanel) {
-    movementHistoryPanel.innerHTML = `Movement History: ${playerState.getMovementHistory().length} points`;
+    movementHistoryPanel.innerHTML =
+      `Movement History: ${playerState.getMovementHistory().length} points`;
   }
 }
 
@@ -273,18 +281,29 @@ function regenerateCachesAround(playerPos: leaflet.LatLng) {
   const playerI = Math.floor((playerPos.lat - NULL_ISLAND.lat) / TILE_DEGREES);
   const playerJ = Math.floor((playerPos.lng - NULL_ISLAND.lng) / TILE_DEGREES);
 
-  for (let i = playerI - NEIGHBORHOOD_SIZE; i <= playerI + NEIGHBORHOOD_SIZE; i++) {
-    for (let j = playerJ - NEIGHBORHOOD_SIZE; j <= playerJ + NEIGHBORHOOD_SIZE; j++) {
+  for (
+    let i = playerI - NEIGHBORHOOD_SIZE;
+    i <= playerI + NEIGHBORHOOD_SIZE;
+    i++
+  ) {
+    for (
+      let j = playerJ - NEIGHBORHOOD_SIZE;
+      j <= playerJ + NEIGHBORHOOD_SIZE;
+      j++
+    ) {
       const cache = cacheManager.spawnCache(i, j);
       const popupContent = popupHandler.createPopupContent(i, j, cache);
 
       const origin = locationFactory.getLocation(
         NULL_ISLAND.lat + i * TILE_DEGREES,
-        NULL_ISLAND.lng + j * TILE_DEGREES
+        NULL_ISLAND.lng + j * TILE_DEGREES,
       );
 
       leaflet
-        .rectangle([[origin.lat, origin.lng], [origin.lat + TILE_DEGREES, origin.lng + TILE_DEGREES]])
+        .rectangle([[origin.lat, origin.lng], [
+          origin.lat + TILE_DEGREES,
+          origin.lng + TILE_DEGREES,
+        ]])
         .addTo(map)
         .bindPopup(popupContent);
     }
