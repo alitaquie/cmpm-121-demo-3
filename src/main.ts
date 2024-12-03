@@ -5,7 +5,7 @@ import "./style.css";
 // Constants and variables
 const TILE_DEGREES = 1e-4; // Tile size increment
 const NEIGHBORHOOD_SIZE = 8; // Size of area for cache generation
-const CACHE_SPAWN_PROBABILITY = 0.1; // Chance of spawning a cache
+const _CACHE_SPAWN_PROBABILITY = 0.1; // Chance of spawning a cache
 const NULL_ISLAND = leaflet.latLng(0, 0); // Null Island as a geodetic datum reference point
 
 // Initialize map
