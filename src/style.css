@@ -95,3 +95,143 @@ body {
 #controlPanel, #statusPanel, #inventory {
   margin-top: 10px;
 }
+.control-panel {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 10px;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+}
+
+.movement-controls {
+  display: grid;
+  grid-template-columns: repeat(3, 40px);
+  grid-template-rows: repeat(3, 40px);
+  gap: 5px;
+}
+
+.movement-controls button {
+  width: 40px;
+  height: 40px;
+  font-size: 20px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+}
+
+.movement-controls button:hover {
+  background: #f0f0f0;
+}
+
+#moveNorth {
+  grid-area: 1 / 2 / 2 / 3;
+}
+#moveSouth {
+  grid-area: 3 / 2 / 4 / 3;
+}
+#moveWest {
+  grid-area: 2 / 1 / 3 / 2;
+}
+#moveEast {
+  grid-area: 2 / 3 / 3 / 4;
+}
+/* Update map to be full-screen */
+#map {
+  height: 100vh !important;
+  width: 100vw !important;
+  margin: 0 !important;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+/* Style the cache popup */
+.cache-popup {
+  min-width: 300px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.cache-popup h3 {
+  margin: 0 0 10px 0;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #ccc;
+  font-size: 16px;
+}
+
+.cache-popup h4 {
+  margin: 10px 0 5px 0;
+  font-size: 14px;
+  color: #444;
+}
+
+.coin-list {
+  margin-bottom: 15px;
+}
+
+.coin-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px;
+  margin: 5px 0;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.coin-item:hover {
+  background: #e9e9e9;
+}
+
+.coin-info {
+  font-size: 12px;
+  color: #666;
+}
+
+.cache-popup button {
+  padding: 4px 8px;
+  margin: 2px;
+  font-size: 12px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+.action-buttons button {
+  flex: 1;
+  padding: 8px;
+  background: #4a90e2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+}
+
+.action-buttons button:hover {
+  background: #357abd;
+}
+
+/* Adjust status panel to overlay on map */
+#statusPanel {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  max-height: 80vh;
+  overflow-y: auto;
+}

@@ -1,431 +1,597 @@
+// @deno-types="npm:@types/leaflet@^1.9.14"
 import leaflet from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./style.css";
+import "./leafletWorkaround.ts";
+import luck from "./luck.ts";
 
-// Constants and variables
-const TILE_DEGREES = 1e-4; // Tile size increment
-const NEIGHBORHOOD_SIZE = 8; // Size of area for cache generation
-const CACHE_SPAWN_PROBABILITY = 0.1; // Chance of spawning a cache
-const NULL_ISLAND = leaflet.latLng(0, 0); // Null Island as a geodetic datum reference point
-let playerPoints = 0; // Player's score
-let playerInventory = 0; // Player's coin count
-let playerMovementHistory: leaflet.LatLng[] = []; // Player's movement history
-
-// Initialize map
-const map = leaflet.map("map", {
-  center: NULL_ISLAND,
-  zoom: 19,
-  zoomControl: true,
-  scrollWheelZoom: true,
-});
-
-// Add OpenStreetMap tiles
-leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19,
-  attribution:
-    'Map data &copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
-}).addTo(map);
-
-// Status and Inventory updates
-const statusPanel = document.querySelector("#statusPanel");
-const inventoryPanel = document.querySelector("#inventory");
-const movementHistoryPanel = document.querySelector("#movementHistory");
-
-const playerMarker = leaflet.marker(NULL_ISLAND);
-playerMarker.bindTooltip("That's you!");
-playerMarker.addTo(map);
-
-// Function to update status display
-function updateStatus() {
-  if (statusPanel && inventoryPanel && movementHistoryPanel) {
-    statusPanel.innerHTML = `Points: ${playerPoints}`;
-    inventoryPanel.innerHTML = `Inventory: ${playerInventory} coins`;
-    movementHistoryPanel.innerHTML =
-      `Movement History: ${playerMovementHistory.length} points`;
-  }
+// Types and interfaces
+interface GlobalCell {
+  i: number;
+  j: number;
 }
 
-// Location Factory using Flyweight Pattern
-class LocationFactory {
-  private locations: { [key: string]: leaflet.LatLng } = {};
+interface Coin {
+  originI: number;
+  originJ: number;
+  serial: number;
+  currentLocation: GlobalCell;
+}
 
-  // Generate or retrieve an existing location based on coordinates
-  getLocation(lat: number, lng: number): leaflet.LatLng {
-    const key = `${lat},${lng}`;
-    if (!this.locations[key]) {
-      this.locations[key] = leaflet.latLng(lat, lng);
+interface CacheMemento {
+  coins: Array<Coin>;
+}
+
+// Constants
+const NEIGHBORHOOD_SIZE = 8;
+const CACHE_SPAWN_PROBABILITY = 0.1;
+const GAMEPLAY_ZOOM_LEVEL = 19;
+const MOVEMENT_DELTA = 1e-4;
+
+// Flyweight factory for cells
+class CellFactory {
+  private cells: Map<string, GlobalCell>;
+
+  constructor() {
+    this.cells = new Map();
+  }
+
+  getCellFromLatLng(lat: number, lng: number): GlobalCell {
+    const i = Math.floor(lat * 10000);
+    const j = Math.floor(lng * 10000);
+    return this.getCell(i, j);
+  }
+
+  getCell(i: number, j: number): GlobalCell {
+    const key = `${i},${j}`;
+    if (!this.cells.has(key)) {
+      this.cells.set(key, { i, j });
     }
-    return this.locations[key];
+    return this.cells.get(key)!;
   }
 }
 
-const locationFactory = new LocationFactory(); // Instantiate the factory
+// Caretaker class for managing cache state mementos
+class CacheStateCaretaker {
+  private mementos: Map<string, CacheMemento> = new Map();
 
-// Coin as a non-fungible token representation
-type Coin = { i: number; j: number; serial: number }; // Unique ID based on cache coordinates and serial
-let coinIdCounter = 0; // Global counter to ensure unique coin serials
-
-// Cache Memento class to store the state
-class CacheMemento {
-  constructor(public cacheCoins: Coin[]) {}
-}
-
-class Cache {
-  private coins: Coin[] = [];
-  public memento?: CacheMemento;
-
-  constructor(public i: number, public j: number) {}
-
-  // Save the current state into a memento
-  saveState(): CacheMemento {
-    this.memento = new CacheMemento([...this.coins]);
-    return this.memento;
+  saveState(cellKey: string, coins: Set<Coin>) {
+    this.mementos.set(cellKey, {
+      coins: Array.from(coins),
+    });
   }
 
-  // Restore state from a memento
-  restoreState(memento: CacheMemento) {
-    this.coins = memento.cacheCoins;
-  }
-
-  // Example coin management
-  addCoins(coins: Coin[]) {
-    this.coins.push(...coins);
-  }
-
-  collectCoins() {
-    const collectedCoins = this.coins.length;
-    this.coins = [];
-    return collectedCoins;
-  }
-
-  get coinCount() {
-    return this.coins.length;
+  getState(cellKey: string): Set<Coin> | undefined {
+    const memento = this.mementos.get(cellKey);
+    if (memento) {
+      return new Set(memento.coins);
+    }
+    return undefined;
   }
 }
 
-const cacheMap: Map<string, Cache> = new Map();
+interface GameState {
+  playerCoins: Array<Coin>;
+  locationHistory: Array<[number, number]>;
+  cacheStates: Array<{
+    cellKey: string;
+    coins: Array<Coin>;
+  }>;
+}
 
-// Function to spawn caches around NULL_ISLAND
-function spawnCache(i: number, j: number) {
-  const key = `${i},${j}`;
-  const cache = new Cache(i, j);
-  cacheMap.set(key, cache);
+class GameManager {
+  private map: leaflet.Map;
+  private playerMarker: leaflet.Marker;
+  private statusPanel: HTMLDivElement;
+  private cellFactory: CellFactory;
+  private cacheStates: Map<string, Set<Coin>>;
+  private playerCoins: Set<Coin>;
+  private rectangles: Map<string, leaflet.Rectangle>;
+  private caretaker: CacheStateCaretaker;
+  private controlPanel: HTMLDivElement;
+  private locationHistory: leaflet.Polyline;
+  private watchId: number | null = null;
+  private pathCoordinates: leaflet.LatLng[] = [];
 
-  const cacheCoins = Array.from(
-    { length: Math.floor(Math.random() * 5) + 1 },
-    (_, serial) => ({ i, j, serial }),
-  );
-  cache.addCoins(cacheCoins);
+  constructor() {
+    this.cellFactory = new CellFactory();
+    this.cacheStates = new Map();
+    this.playerCoins = new Set();
+    this.rectangles = new Map();
+    this.caretaker = new CacheStateCaretaker();
 
-  // Generate cache on map with popup
-  const origin = NULL_ISLAND;
-  const lat = origin.lat + i * TILE_DEGREES;
-  const lng = origin.lng + j * TILE_DEGREES;
+    // Initialize map centered at Oakes classroom
+    const OAKES_CLASSROOM = leaflet.latLng(
+      36.98949379578401,
+      -122.06277128548504,
+    );
+    this.map = leaflet.map(document.getElementById("map")!, {
+      center: OAKES_CLASSROOM,
+      zoom: GAMEPLAY_ZOOM_LEVEL,
+      minZoom: GAMEPLAY_ZOOM_LEVEL,
+      maxZoom: GAMEPLAY_ZOOM_LEVEL,
+      zoomControl: false,
+      scrollWheelZoom: false,
+    });
 
-  const bounds = leaflet.latLngBounds([
-    locationFactory.getLocation(lat, lng),
-    locationFactory.getLocation(lat + TILE_DEGREES, lng + TILE_DEGREES),
-  ]);
+    // Add tile layer
+    leaflet
+      .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution:
+          '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      })
+      .addTo(this.map);
 
-  const rect = leaflet.rectangle(bounds).addTo(map);
-  rect.bindPopup(() => {
+    // Initialize player marker
+    this.playerMarker = leaflet.marker(OAKES_CLASSROOM);
+    this.playerMarker.bindTooltip("Player Location");
+    this.playerMarker.addTo(this.map);
+
+    // Initialize location history polyline with initial position
+    this.pathCoordinates = [OAKES_CLASSROOM];
+    this.locationHistory = leaflet.polyline(this.pathCoordinates, {
+      color: "blue",
+      weight: 3,
+      opacity: 0.5,
+    }).addTo(this.map);
+
+    // Initialize panels
+    this.statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
+    this.createControlPanel();
+
+    // Load saved state or start fresh
+    this.loadGameState();
+
+    // Start game
+    this.refreshVisibleArea();
+    this.updateStatusPanel();
+  }
+
+  private movePlayer(direction: "north" | "south" | "east" | "west") {
+    const currentPos = this.playerMarker.getLatLng();
+    let newPos: leaflet.LatLng;
+
+    switch (direction) {
+      case "north":
+        newPos = leaflet.latLng(
+          currentPos.lat + MOVEMENT_DELTA,
+          currentPos.lng,
+        );
+        break;
+      case "south":
+        newPos = leaflet.latLng(
+          currentPos.lat - MOVEMENT_DELTA,
+          currentPos.lng,
+        );
+        break;
+      case "east":
+        newPos = leaflet.latLng(
+          currentPos.lat,
+          currentPos.lng + MOVEMENT_DELTA,
+        );
+        break;
+      case "west":
+        newPos = leaflet.latLng(
+          currentPos.lat,
+          currentPos.lng - MOVEMENT_DELTA,
+        );
+        break;
+    }
+
+    this.updatePlayerPosition(newPos);
+  }
+
+  private updatePlayerPosition(newPos: leaflet.LatLng) {
+    // Update player marker
+    this.playerMarker.setLatLng(newPos);
+    this.map.setView(newPos);
+
+    // Update path coordinates and polyline
+    this.pathCoordinates.push(newPos);
+    this.locationHistory.setLatLngs(this.pathCoordinates);
+
+    // Refresh visible caches
+    this.refreshVisibleArea();
+
+    // Save game state
+    this.saveGameState();
+  }
+
+  private toggleGeolocation() {
+    const locationButton = this.controlPanel.querySelector(
+      "#toggleLocation",
+    ) as HTMLButtonElement;
+
+    if (this.watchId === null) {
+      if ("geolocation" in navigator) {
+        locationButton.style.backgroundColor = "#a0f0a0"; // Green background when active
+        this.watchId = navigator.geolocation.watchPosition(
+          (position) => {
+            const newPos = leaflet.latLng(
+              position.coords.latitude,
+              position.coords.longitude,
+            );
+            this.updatePlayerPosition(newPos);
+          },
+          (error) => {
+            console.error("Geolocation error:", error);
+            this.watchId = null;
+            locationButton.style.backgroundColor = ""; // Reset background on error
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 5000,
+            maximumAge: 0,
+          },
+        );
+      } else {
+        alert("Geolocation is not supported by your browser");
+      }
+    } else {
+      navigator.geolocation.clearWatch(this.watchId);
+      this.watchId = null;
+      locationButton.style.backgroundColor = ""; // Reset background when disabled
+    }
+  }
+
+  private resetGame() {
+    if (
+      confirm(
+        "Are you sure you want to reset the game? This will return all coins to their original locations and clear your location history.",
+      )
+    ) {
+      // Clear location history
+      this.pathCoordinates = [this.playerMarker.getLatLng()];
+      this.locationHistory.setLatLngs(this.pathCoordinates);
+
+      // Return all coins to their original caches
+      for (const coin of this.playerCoins) {
+        const originCellKey = this.getCellKey(
+          this.cellFactory.getCell(coin.originI, coin.originJ),
+        );
+        let originCache = this.cacheStates.get(originCellKey);
+        if (!originCache) {
+          originCache = new Set<Coin>();
+          this.cacheStates.set(originCellKey, originCache);
+        }
+        originCache.add(coin);
+      }
+
+      // Clear player's inventory
+      this.playerCoins.clear();
+
+      // Clear local storage
+      localStorage.removeItem("geocoinGame");
+
+      // Refresh display
+      this.refreshVisibleArea();
+      this.updateStatusPanel();
+    }
+  }
+
+  private saveGameState() {
+    const gameState: GameState = {
+      playerCoins: Array.from(this.playerCoins),
+      locationHistory: this.pathCoordinates.map((pos) => [pos.lat, pos.lng]),
+      cacheStates: Array.from(this.cacheStates.entries()).map((
+        [cellKey, coins],
+      ) => ({
+        cellKey,
+        coins: Array.from(coins),
+      })),
+    };
+
+    localStorage.setItem("geocoinGame", JSON.stringify(gameState));
+  }
+
+  private loadGameState() {
+    const savedState = localStorage.getItem("geocoinGame");
+    if (savedState) {
+      try {
+        const gameState: GameState = JSON.parse(savedState);
+
+        // Restore player coins
+        this.playerCoins = new Set(gameState.playerCoins);
+
+        // Restore location history
+        this.pathCoordinates = gameState.locationHistory.map(([lat, lng]) =>
+          leaflet.latLng(lat, lng)
+        );
+        this.locationHistory.setLatLngs(this.pathCoordinates);
+
+        // If there's a history, move player to last position
+        if (this.pathCoordinates.length > 0) {
+          const lastPos = this.pathCoordinates[this.pathCoordinates.length - 1];
+          this.playerMarker.setLatLng(lastPos);
+          this.map.setView(lastPos);
+        }
+
+        // Restore cache states
+        for (const { cellKey, coins } of gameState.cacheStates) {
+          this.cacheStates.set(cellKey, new Set(coins));
+        }
+      } catch (error) {
+        console.error("Error loading game state:", error);
+        // If there's an error loading the state, start fresh
+        localStorage.removeItem("geocoinGame");
+      }
+    }
+  }
+
+  private createControlPanel() {
+    this.controlPanel = document.createElement("div");
+    this.controlPanel.className = "control-panel";
+    this.controlPanel.innerHTML = `
+      <div class="movement-controls">
+        <button id="moveNorth">⬆️</button>
+        <button id="moveSouth">⬇️</button>
+        <button id="moveWest">⬅️</button>
+        <button id="moveEast">➡️</button>
+        <button id="toggleLocation">🌐</button>
+        <button id="resetGame">🚮</button>
+      </div>
+    `;
+    document.body.appendChild(this.controlPanel);
+
+    // Add movement event listeners
+    this.controlPanel.querySelector("#moveNorth")!.addEventListener(
+      "click",
+      () => this.movePlayer("north"),
+    );
+    this.controlPanel.querySelector("#moveSouth")!.addEventListener(
+      "click",
+      () => this.movePlayer("south"),
+    );
+    this.controlPanel.querySelector("#moveWest")!.addEventListener(
+      "click",
+      () => this.movePlayer("west"),
+    );
+    this.controlPanel.querySelector("#moveEast")!.addEventListener(
+      "click",
+      () => this.movePlayer("east"),
+    );
+
+    // Add geolocation toggle
+    this.controlPanel.querySelector("#toggleLocation")!.addEventListener(
+      "click",
+      () => this.toggleGeolocation(),
+    );
+
+    // Add reset button
+    this.controlPanel.querySelector("#resetGame")!.addEventListener(
+      "click",
+      () => this.resetGame(),
+    );
+  }
+
+  private refreshVisibleArea() {
+    // Save current cache states
+    for (const [cellKey, coins] of this.cacheStates.entries()) {
+      this.caretaker.saveState(cellKey, coins);
+    }
+
+    // Clear current visible caches
+    for (const rect of this.rectangles.values()) {
+      rect.remove();
+    }
+    this.rectangles.clear();
+    this.cacheStates.clear();
+
+    // Get current player position and generate new visible area
+    const playerPos = this.playerMarker.getLatLng();
+    const centerCell = this.cellFactory.getCellFromLatLng(
+      playerPos.lat,
+      playerPos.lng,
+    );
+
+    for (let di = -NEIGHBORHOOD_SIZE; di < NEIGHBORHOOD_SIZE; di++) {
+      for (let dj = -NEIGHBORHOOD_SIZE; dj < NEIGHBORHOOD_SIZE; dj++) {
+        const cell = this.cellFactory.getCell(
+          centerCell.i + di,
+          centerCell.j + dj,
+        );
+        const cellKey = this.getCellKey(cell);
+
+        // Check if we have saved state for this cell
+        const savedState = this.caretaker.getState(cellKey);
+
+        if (savedState) {
+          // Restore saved cache
+          this.cacheStates.set(cellKey, savedState);
+          this.createCacheVisual(cell);
+        } else if (
+          luck([cell.i, cell.j].toString()) < CACHE_SPAWN_PROBABILITY
+        ) {
+          // Generate new cache
+          this.createCache(cell);
+        }
+      }
+    }
+  }
+
+  private createCache(cell: GlobalCell) {
+    const cellKey = this.getCellKey(cell);
+
+    // Initialize coin set for this cache
+    const coins = new Set<Coin>();
+    const numCoins =
+      Math.floor(luck([cell.i, cell.j, "coins"].toString()) * 5) + 1;
+
+    for (let serial = 0; serial < numCoins; serial++) {
+      coins.add({
+        originI: cell.i,
+        originJ: cell.j,
+        serial,
+        currentLocation: cell,
+      });
+    }
+
+    this.cacheStates.set(cellKey, coins);
+    this.createCacheVisual(cell);
+  }
+
+  private createCacheVisual(cell: GlobalCell) {
+    const cellKey = this.getCellKey(cell);
+    const bounds = this.getCellBounds(cell);
+    const rect = leaflet.rectangle(bounds, {
+      color: "green",
+      fillOpacity: 0.2,
+    });
+
+    this.rectangles.set(cellKey, rect);
+    rect.addTo(this.map);
+    rect.bindPopup(() => this.createCachePopup(cell));
+  }
+
+  private createCachePopup(cell: GlobalCell): HTMLDivElement {
+    const cellKey = this.getCellKey(cell);
+    const cacheCoins = this.cacheStates.get(cellKey) || new Set<Coin>();
+
     const popupDiv = document.createElement("div");
+    popupDiv.className = "cache-popup";
     popupDiv.innerHTML = `
-      <div>Cache at (${i},${j})</div>
-      <div>Coins available: <span id="coinCount">${cache.coinCount}</span></div>
-      <button id="collectCoins">Collect</button>
-      <button id="depositCoins">Deposit</button>
-      <button id="centerOnCache">Center on Cache</button>
+      <h3>Cache at Global Cell {i: ${cell.i}, j: ${cell.j}}</h3>
+      
+      <h4>Coins in cache:</h4>
+      <div id="cacheList" class="coin-list"></div>
+      
+      <h4>Your coins:</h4>
+      <div id="playerList" class="coin-list"></div>
+      
+      <div class="action-buttons">
+        <button id="collectAllBtn">Collect All</button>
+        <button id="depositAllBtn">Deposit All</button>
+      </div>
     `;
 
-    popupDiv.querySelector("#collectCoins")!.addEventListener("click", () => {
-      if (cache.coinCount > 0) {
-        playerInventory += cache.collectCoins();
-        updateStatus();
-        popupDiv.querySelector("#coinCount")!.textContent = "0";
+    // Display cache coins
+    const cacheList = popupDiv.querySelector("#cacheList")!;
+    cacheList.innerHTML = Array.from(cacheCoins)
+      .map((coin) => `
+        <div class="coin-item">
+          <span class="coin-info">Origin: {i: ${coin.originI}, j: ${coin.originJ}, serial: ${coin.serial}}</span>
+          <button onclick="window.game.collectCoin('${cellKey}', ${coin.originI}, ${coin.originJ}, ${coin.serial})">
+            Collect
+          </button>
+        </div>
+      `).join("");
+
+    // Display player coins
+    const playerList = popupDiv.querySelector("#playerList")!;
+    playerList.innerHTML = Array.from(this.playerCoins)
+      .map((coin) => `
+        <div class="coin-item">
+          <span class="coin-info">Origin: {i: ${coin.originI}, j: ${coin.originJ}, serial: ${coin.serial}}</span>
+          <button onclick="window.game.depositCoin('${cellKey}', ${coin.originI}, ${coin.originJ}, ${coin.serial})">
+            Deposit
+          </button>
+        </div>
+      `).join("");
+
+    // Add event listeners for buttons
+    popupDiv.querySelector("#collectAllBtn")!.addEventListener("click", () => {
+      for (const coin of cacheCoins) {
+        this.collectCoin(cellKey, coin.originI, coin.originJ, coin.serial);
       }
     });
 
-    popupDiv.querySelector("#depositCoins")!.addEventListener("click", () => {
-      if (playerInventory > 0) {
-        const depositCoins = Array.from(
-          { length: playerInventory },
-          (_, _serial) => ({ i, j, serial: coinIdCounter++ }),
-        );
-        cache.addCoins(depositCoins);
-        playerPoints += playerInventory;
-        playerInventory = 0;
-        updateStatus();
-        popupDiv.querySelector("#coinCount")!.textContent =
-          `${cache.coinCount}`;
+    popupDiv.querySelector("#depositAllBtn")!.addEventListener("click", () => {
+      for (const coin of this.playerCoins) {
+        this.depositCoin(cellKey, coin.originI, coin.originJ, coin.serial);
       }
-    });
-
-    popupDiv.querySelector("#centerOnCache")!.addEventListener("click", () => {
-      map.panTo(locationFactory.getLocation(lat, lng));
     });
 
     return popupDiv;
-  });
-}
-
-// Facade pattern to decouple player movement from specific mechanisms
-interface PlayerMovementStrategy {
-  getCurrentPosition(): leaflet.LatLng;
-  startPositionTracking(): void;
-  stopPositionTracking(): void;
-}
-
-class ManualPlayerMovement implements PlayerMovementStrategy {
-  getCurrentPosition(): leaflet.LatLng {
-    return playerMarker.getLatLng();
   }
 
-  startPositionTracking(): void {
-    // No-op for manual movement
-  }
-
-  stopPositionTracking(): void {
-    // No-op for manual movement
-  }
-}
-
-class AutomaticPlayerMovement implements PlayerMovementStrategy {
-  private watchId: number | null = null;
-
-  async getCurrentPosition(): Promise<leaflet.LatLng> {
-    const pos = await this.getCurrentGeolocation();
-    return locationFactory.getLocation(
-      pos.coords.latitude,
-      pos.coords.longitude,
-    );
-  }
-
-  startPositionTracking(): void {
-    this.watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        this.onPositionUpdate(position);
-      },
-      (error) => {
-        console.error("Error getting geolocation:", error);
-      },
-    );
-  }
-
-  stopPositionTracking(): void {
-    if (this.watchId !== null) {
-      navigator.geolocation.clearWatch(this.watchId);
-      this.watchId = null;
-    }
-  }
-
-  private getCurrentGeolocation(): Promise<GeolocationPosition> {
-    return new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(
-        (position) => resolve(position),
-        (error) => reject(error),
-      );
-    });
-  }
-
-  private onPositionUpdate(position: GeolocationPosition): void {
-    const newPos = locationFactory.getLocation(
-      position.coords.latitude,
-      position.coords.longitude,
-    );
-    playerMarker.setLatLng(newPos);
-    map.panTo(newPos);
-
-    playerMovementHistory.push(newPos);
-    updateStatus();
-    updatePlayerPath(); // Update polyline path
-  }
-}
-
-let playerMovementStrategy: PlayerMovementStrategy = new ManualPlayerMovement();
-const playerPolyline = leaflet.polyline(playerMovementHistory, {
-  color: "blue",
-})
-  .addTo(map);
-
-// Function to update the polyline path as player moves
-function updatePlayerPath() {
-  playerPolyline.setLatLngs(playerMovementHistory);
-}
-
-// Functions to handle player movement
-function movePlayer(dx: number, dy: number) {
-  const newLat = playerMovementStrategy.getCurrentPosition().lat + dy;
-  const newLng = playerMovementStrategy.getCurrentPosition().lng + dx;
-  const newPos = locationFactory.getLocation(newLat, newLng);
-  playerMarker.setLatLng(newPos);
-
-  regenerateCachesAround(newPos);
-  map.panTo(newPos);
-
-  // Store the player's movement history
-  playerMovementHistory.push(newPos);
-  updateStatus();
-
-  // Update the polyline path
-  updatePlayerPath();
-}
-function togglePositionTracking() {
-  if (playerMovementStrategy instanceof ManualPlayerMovement) {
-    playerMovementStrategy = new AutomaticPlayerMovement();
-    playerMovementStrategy.startPositionTracking();
-  } else {
-    playerMovementStrategy.stopPositionTracking();
-    playerMovementStrategy = new ManualPlayerMovement();
-  }
-}
-
-// Cache regeneration around the player
-function regenerateCachesAround(playerPos: leaflet.LatLng) {
-  // Clear existing cache markers
-  map.eachLayer((layer: leaflet.Layer) => {
-    if (layer instanceof leaflet.Rectangle) {
-      map.removeLayer(layer);
-    }
-  });
-
-  // Calculate the bounds around the player position
-  const playerI = Math.floor((playerPos.lat - NULL_ISLAND.lat) / TILE_DEGREES);
-  const playerJ = Math.floor((playerPos.lng - NULL_ISLAND.lng) / TILE_DEGREES);
-
-  // Regenerate caches within the neighborhood
-  for (
-    let i = playerI - NEIGHBORHOOD_SIZE;
-    i <= playerI + NEIGHBORHOOD_SIZE;
-    i++
+  collectCoin(
+    cellKey: string,
+    originI: number,
+    originJ: number,
+    serial: number,
   ) {
-    for (
-      let j = playerJ - NEIGHBORHOOD_SIZE;
-      j <= playerJ + NEIGHBORHOOD_SIZE;
-      j++
-    ) {
-      const key = `${i},${j}`;
+    const cache = this.cacheStates.get(cellKey);
+    if (!cache) return;
 
-      // If cache exists at this location
-      if (cacheMap.has(key)) {
-        const cache = cacheMap.get(key)!;
-        if (cache.memento) {
-          cache.restoreState(cache.memento);
-        }
-        spawnCache(i, j);
-      } // If no cache exists and we meet spawn probability
-      else if (Math.random() < CACHE_SPAWN_PROBABILITY) {
-        spawnCache(i, j);
-      }
+    const coin = Array.from(cache).find(
+      (c) =>
+        c.originI === originI && c.originJ === originJ && c.serial === serial,
+    );
+
+    if (coin) {
+      cache.delete(coin);
+      this.playerCoins.add(coin);
+      this.updateCacheDisplay(cellKey);
     }
   }
 
-  // Clean up caches that are too far away
-  cacheMap.forEach((cache, key) => {
-    const cacheLatLng = locationFactory.getLocation(
-      NULL_ISLAND.lat + cache.i * TILE_DEGREES,
-      NULL_ISLAND.lng + cache.j * TILE_DEGREES,
+  depositCoin(
+    cellKey: string,
+    originI: number,
+    originJ: number,
+    serial: number,
+  ) {
+    const coin = Array.from(this.playerCoins).find(
+      (c) =>
+        c.originI === originI && c.originJ === originJ && c.serial === serial,
     );
 
-    if (
-      playerPos.distanceTo(cacheLatLng) > TILE_DEGREES * NEIGHBORHOOD_SIZE * 2
-    ) {
-      cache.saveState();
-      cacheMap.delete(key);
+    if (coin) {
+      this.playerCoins.delete(coin);
+      const cache = this.cacheStates.get(cellKey) || new Set<Coin>();
+      cache.add(coin);
+      this.cacheStates.set(cellKey, cache);
+      this.updateCacheDisplay(cellKey);
     }
-  });
+  }
+
+  private updateCacheDisplay(cellKey: string) {
+    const cache = this.cacheStates.get(cellKey);
+    const rect = this.rectangles.get(cellKey);
+
+    if (rect && cache) {
+      rect.setStyle({
+        color: cache.size > 0 ? "green" : "gray",
+      });
+    }
+
+    this.updateStatusPanel();
+  }
+
+  private updateStatusPanel() {
+    this.statusPanel.innerHTML = `
+      Player has ${this.playerCoins.size} coins<br>
+      ${
+      Array.from(this.playerCoins)
+        .map((coin) =>
+          `{i: ${coin.originI}, j: ${coin.originJ}, serial: ${coin.serial}}`
+        )
+        .join("<br>")
+    }
+    `;
+  }
+
+  private getCellKey(cell: GlobalCell): string {
+    return `${cell.i},${cell.j}`;
+  }
+
+  private getCellBounds(cell: GlobalCell): leaflet.LatLngBounds {
+    return leaflet.latLngBounds([
+      [cell.i / 10000, cell.j / 10000],
+      [(cell.i + 1) / 10000, (cell.j + 1) / 10000],
+    ]);
+  }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  // Add event listeners for movement buttons
-  document.querySelector("#moveUp")!.addEventListener(
-    "click",
-    () => movePlayer(0, TILE_DEGREES),
-  );
-  document.querySelector("#moveDown")!.addEventListener(
-    "click",
-    () => movePlayer(0, -TILE_DEGREES),
-  );
-  document.querySelector("#moveLeft")!.addEventListener(
-    "click",
-    () => movePlayer(-TILE_DEGREES, 0),
-  );
-  document.querySelector("#moveRight")!.addEventListener(
-    "click",
-    () => movePlayer(TILE_DEGREES, 0),
-  );
-  document.querySelector("#togglePositionTracking")!.addEventListener(
-    "click",
-    togglePositionTracking,
-  );
-  interface GameState {
-    playerPoints: number;
-    playerInventory: number; // specify proper type
-    playerMovementHistory: leaflet.LatLng[]; // specify proper type
-    updateStatus: () => void;
+// Make game instance available globally for button callbacks
+declare global {
+  interface Window {
+    game: GameManager;
   }
-  const gameState: GameState = {
-    playerPoints,
-    playerInventory,
-    playerMovementHistory,
-    updateStatus,
-  };
+}
 
-  function loadGameState(context: GameState): void {
-    const savedState = localStorage.getItem("gameState");
-    if (savedState) {
-      const { playerPoints, playerInventory, playerMovementHistory } = JSON
-        .parse(savedState);
-      context.playerPoints = playerPoints;
-      context.playerInventory = playerInventory;
-      context.playerMovementHistory = playerMovementHistory.map((
-        pos: { lat: number; lng: number },
-      ) => locationFactory.getLocation(pos.lat, pos.lng));
-      context.updateStatus();
-    }
-  }
-
-  function __saveGameState() {
-    localStorage.setItem(
-      "gameState",
-      JSON.stringify({
-        playerPoints,
-        playerInventory,
-        playerMovementHistory: playerMovementHistory.map((pos) => pos.toJSON()),
-      }),
-    );
-  }
-
-  // Event listener for resetting the game
-  document.querySelector("#resetGame")!.addEventListener("click", () => {
-    if (confirm("Are you sure you want to reset the game?")) {
-      playerPoints = 0;
-      playerInventory = 0;
-      playerMovementHistory = [];
-      cacheMap.forEach((cache) => cache.saveState());
-      updateStatus();
-      localStorage.removeItem("gameState");
-
-      // Clear polyline path
-      playerPolyline.setLatLngs([]);
-    }
-  });
-
-  // Initial cache generation
-  for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
-    for (let j = -NEIGHBORHOOD_SIZE; j <= NEIGHBORHOOD_SIZE; j++) {
-      if (Math.random() < CACHE_SPAWN_PROBABILITY) {
-        spawnCache(i, j); // Spawn a cache at (i, j) if probability condition is met
-      }
-    }
-  }
-
-  // Load the game state from local storage
-  loadGameState(gameState);
-
-  // Render the player's movement history as a polyline
-  const __movementHistoryLayer = leaflet.polyline(playerMovementHistory, {
-    color: "red",
-    weight: 3,
-  }).addTo(map);
+// Initialize the game when the page loads
+globalThis.addEventListener("load", () => {
+  globalThis.game = new GameManager();
 });
