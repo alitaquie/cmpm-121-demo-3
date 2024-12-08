@@ -11,6 +11,11 @@ interface GlobalCell {
   j: number;
 }
 
+declare global {
+  interface Window {
+    game: GameManager;
+  }
+}
 interface Coin {
   originI: number;
   originJ: number;
@@ -88,7 +93,7 @@ class GameManager {
   private playerCoins: Set<Coin>;
   private rectangles: Map<string, leaflet.Rectangle>;
   private caretaker: CacheStateCaretaker;
-  private controlPanel: HTMLDivElement;
+  private controlPanel!: HTMLDivElement;
   private locationHistory: leaflet.Polyline;
   private watchId: number | null = null;
   private pathCoordinates: leaflet.LatLng[] = [];
@@ -446,57 +451,34 @@ class GameManager {
 
   private createCachePopup(cell: GlobalCell): HTMLDivElement {
     const cellKey = this.getCellKey(cell);
-    const cacheCoins = this.cacheStates.get(cellKey) || new Set<Coin>();
-
     const popupDiv = document.createElement("div");
     popupDiv.className = "cache-popup";
+
     popupDiv.innerHTML = `
-      <h3>Cache at Global Cell {i: ${cell.i}, j: ${cell.j}}</h3>
-      
-      <h4>Coins in cache:</h4>
-      <div id="cacheList" class="coin-list"></div>
-      
-      <h4>Your coins:</h4>
-      <div id="playerList" class="coin-list"></div>
-      
-      <div class="action-buttons">
-        <button id="collectAllBtn">Collect All</button>
-        <button id="depositAllBtn">Deposit All</button>
-      </div>
+        <h3>Cache at Global Cell {i: ${cell.i}, j: ${cell.j}}</h3>
+        <h4>Coins in cache:</h4>
+        <div id="cacheList" class="coin-list">${
+      this.generateCacheCoinsHTML(cell)
+    }</div>
+        <h4>Your coins:</h4>
+        <div id="playerList" class="coin-list">${
+      this.generatePlayerCoinsHTML(cellKey)
+    }</div>
+        <div class="action-buttons">
+            <button id="collectAllBtn">Collect All</button>
+            <button id="depositAllBtn">Deposit All</button>
+        </div>
     `;
 
-    // Display cache coins
-    const cacheList = popupDiv.querySelector("#cacheList")!;
-    cacheList.innerHTML = Array.from(cacheCoins)
-      .map((coin) => `
-        <div class="coin-item">
-          <span class="coin-info">Origin: {i: ${coin.originI}, j: ${coin.originJ}, serial: ${coin.serial}}</span>
-          <button onclick="window.game.collectCoin('${cellKey}', ${coin.originI}, ${coin.originJ}, ${coin.serial})">
-            Collect
-          </button>
-        </div>
-      `).join("");
-
-    // Display player coins
-    const playerList = popupDiv.querySelector("#playerList")!;
-    playerList.innerHTML = Array.from(this.playerCoins)
-      .map((coin) => `
-        <div class="coin-item">
-          <span class="coin-info">Origin: {i: ${coin.originI}, j: ${coin.originJ}, serial: ${coin.serial}}</span>
-          <button onclick="window.game.depositCoin('${cellKey}', ${coin.originI}, ${coin.originJ}, ${coin.serial})">
-            Deposit
-          </button>
-        </div>
-      `).join("");
-
-    // Add event listeners for buttons
-    popupDiv.querySelector("#collectAllBtn")!.addEventListener("click", () => {
+    // Add event listeners for action buttons
+    popupDiv.querySelector("#collectAllBtn")?.addEventListener("click", () => {
+      const cacheCoins = this.cacheStates.get(cellKey) || new Set<Coin>();
       for (const coin of cacheCoins) {
         this.collectCoin(cellKey, coin.originI, coin.originJ, coin.serial);
       }
     });
 
-    popupDiv.querySelector("#depositAllBtn")!.addEventListener("click", () => {
+    popupDiv.querySelector("#depositAllBtn")?.addEventListener("click", () => {
       for (const coin of this.playerCoins) {
         this.depositCoin(cellKey, coin.originI, coin.originJ, coin.serial);
       }
@@ -505,6 +487,30 @@ class GameManager {
     return popupDiv;
   }
 
+  // Helper methods for generating HTML
+  private generateCacheCoinsHTML(cell: GlobalCell): string {
+    const cellKey = this.getCellKey(cell);
+    const cacheCoins = this.cacheStates.get(cellKey) || new Set<Coin>();
+    return Array.from(cacheCoins)
+      .map((coin) => `
+            <div class="coin-item">
+                <span class="coin-info">Origin: {i: ${coin.originI}, j: ${coin.originJ}, serial: ${coin.serial}}</span>
+                <button onclick="window.game.collectCoin('${cellKey}', ${coin.originI}, ${coin.originJ}, ${coin.serial})">
+                    Collect
+                </button>
+            </div>`).join("");
+  }
+
+  private generatePlayerCoinsHTML(cellKey: string): string {
+    return Array.from(this.playerCoins)
+      .map((coin) => `
+            <div class="coin-item">
+                <span class="coin-info">Origin: {i: ${coin.originI}, j: ${coin.originJ}, serial: ${coin.serial}}</span>
+                <button onclick="window.game.depositCoin('${cellKey}', ${coin.originI}, ${coin.originJ}, ${coin.serial})">
+                    Deposit
+                </button>
+            </div>`).join("");
+  }
   collectCoin(
     cellKey: string,
     originI: number,
@@ -584,14 +590,6 @@ class GameManager {
   }
 }
 
-// Make game instance available globally for button callbacks
-declare global {
-  interface Window {
-    game: GameManager;
-  }
-}
-
-// Initialize the game when the page loads
 globalThis.addEventListener("load", () => {
   globalThis.game = new GameManager();
 });
